@@ -208,8 +208,3 @@ def lambda_handler(event, context):
     }
 
     return action_response
-
-
-event = {'messageVersion': '1.0', 'agent': {'alias': 'DEU24EPUI8', 'name': 'aws-billing-agent', 'version': '7', 'id': 'HNBIBVOVAM'}, 'sessionId': '1713911535.493059', 'sessionAttributes': {}, 'promptSessionAttributes': {}, 'inputText': ' The total spend across all AWS services', 'apiPath': '/get_cost_and_usage', 'actionGroup': 'AWSBillingAgent', 'httpMethod': 'GET', 'parameters': [{'name': 'linked_account', 'type': 'string', 'value': '004889159502'}, {
-    'name': 'group_by_dimension', 'type': 'string', 'value': ''}, {'name': 'metric', 'type': 'string', 'value': 'UnblendedCost'}, {'name': 'billing_period_end', 'type': 'string', 'value': '2024-03-31'}, {'name': 'granularity', 'type': 'string', 'value': 'MONTHLY'}, {'name': 'service', 'type': 'string', 'value': ''}, {'name': 'billing_period_start', 'type': 'string', 'value': '2024-03-01'}]}
-lambda_handler(event, None)
