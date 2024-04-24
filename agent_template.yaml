@@ -61,7 +61,8 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - "ce:*"
+                  - "ce:GetDimensionValues"
+                  - "ce:GetCostAndUsage"
                 Resource: "*"
 
   BillingAgentLambdaFunction:
