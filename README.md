@@ -1,6 +1,5 @@
 # Amazon Bedrock Billing Agent
 
-
 This sample Amazon Bedrock Agent assist users in understanding and optimizing their AWS costs and usage. The agent leverages AWS Cost Explorer data to generate cost reports, provide recommendations, and answer questions related to AWS billing and spend.
 
 ## Prerequisites
@@ -38,7 +37,9 @@ The agent's action group includes an API schema defining the following endpoints
 - `/get_cost_and_usage` - Retrieves AWS cost and usage data based on user-provided filters and grouping parameters.
 - `/get-dimension-values` - Retrieves available values for a specified dimension (e.g., service, region) within a billing period.
 - `/get-date` - Retrieves the current date and month for reference.
+## Architecture
 
+![Agent Diagram](static/Diagram.png)
 ## Usage
 
 1. Launch [this](agent_template.yaml) CloudFormation stack, providing values for the template parameters.
