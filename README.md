@@ -1,6 +1,5 @@
 # Amazon Bedrock Billing Agent
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 This sample Amazon Bedrock Agent assist users in understanding and optimizing their AWS costs and usage. The agent leverages AWS Cost Explorer data to generate cost reports, provide recommendations, and answer questions related to AWS billing and spend.
 

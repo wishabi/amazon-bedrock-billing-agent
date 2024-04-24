@@ -338,259 +338,259 @@ Resources:
           ApiSchema:
             Payload: |
               {
-                  "openapi": "3.0.0",
-                  "info": {
-                      "title": "AWS Cost And Usage API",
-                      "version": "1.0.0",
-                      "description": "The AWS Cost And Usage API provides a means to retrieve detailed cost and usage data for AWS services within a specified billing period."
-                  },
-                  "paths": {
-                      "/get-date": {
-                          "get": {
-                              "summary": "Retrieve Date",
-                              "description": "This endpoint retrieves current month date and today's date so agent know what month and day it's to compare the billing period requested by user is not in the future.",
-                              "operationId": "getDate",
-                              "responses": {
-                                  "200": {
-                                      "description": "Returns current date",
-                                      "content": {
-                                          "application/json": {
-                                              "schema": {
-                                                  "type": "object",
-                                                  "properties": {
-                                                      "today_date": {
-                                                          "type": "object",
-                                                          "additionalProperties": {
-                                                              "type": "string",
-                                                              "description": "Today's Date"
-                                                          }
-                                                      },
-                                                      "current_month": {
-                                                          "type": "object",
-                                                          "additionalProperties": {
-                                                              "type": "string",
-                                                              "description": "Current Month"
-                                                          }
-                                                      }
-                                                  }
-                                              }
-                                          }
-                                      }
-                                  }
-                              }
-                          }
-                      },
-                      "/get_cost_and_usage": {
-                          "get": {
-                              "summary": "Retrieve AWS Cost and Usage Data based on filter and grouping requested by user",
-                              "description": "This endpoint retrieve AWS cost and usage data for AWS services during a specified billing period, filter and grouping. It allows users to dynamically generate cost reports tailored to their needs, enabling detailed analysis of AWS spending. Users can specify parameters such as granularity, billing period start and end dates, and additional filters (e.g., service name, region, linked account) to customize the report according to their requirements.",
-                              "operationId": "GetCostAndUsage",
-                              "parameters": [
-                                  {
-                                      "name": "granularity",
-                                      "in": "query",
-                                      "description": "The granularity at which cost data is aggregated. Defaults MONTHLY, if not provided.",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "billing_period_start",
-                                      "in": "query",
-                                      "description": "The start date of the billing period in YYYY-MM-DD format. Defaults to last month, if not provided. You can get current date using getDate function",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string",
-                                          "format": "date"
-                                      }
-                                  },
-                                  {
-                                      "name": "billing_period_end",
-                                      "in": "query",
-                                      "description": "The end date of the billing period in YYYY-MM-DD format.",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string",
-                                          "format": "date"
-                                      }
-                                  },
-                                  {
-                                      "name": "service",
-                                      "in": "query",
-                                      "description": "The name of the AWS service to filter costs. If the the user request is for 'all services' or doesn't provide a value, set it to None. If the user provides a specific service name, use that value.",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "region",
-                                      "in": "query",
-                                      "description": "The AWS region to filter costs. Defaults to None if not provided.",
-                                      "required": false,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "linked_account",
-                                      "in": "query",
-                                      "description": "The linked account to filter costs. Defaults to None if not provided.",
-                                      "required": false,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "operation",
-                                      "in": "query",
-                                      "description": "Filter cost by the Operation or Action performed, Examples(RunInstance, CreateBucket). Defaults to None if not provided.",
-                                      "required": false,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "purchase_type",
-                                      "in": "query",
-                                      "description": "The purchase type (purchase option) to filter costs. Defaults to None if not provided.",
-                                      "required": false,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "record_type",
-                                      "in": "query",
-                                      "description": "The different types of charges such as Reserved Instance (RI) fees, usage costs, tax refunds, and credits. Defaults to None if not provided.",
-                                      "required": false,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "usage_type",
-                                      "in": "query",
-                                      "description": "The usage type to filter costs. Defaults to None if not provided.",
-                                      "required": false,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "group_by_dimension",
-                                      "in": "query",
-                                      "description": "The dimension key by which to group cost by. Valid values are AZ, INSTANCE_TYPE, LINKED_ACCOUNT, OPERATION, PURCHASE_TYPE, SERVICE, USAGE_TYPE, PLATFORM, TENANCY, RECORD_TYPE, LEGAL_ENTITY_NAME, INVOICING_ENTITY, DEPLOYMENT_OPTION, DATABASE_ENGINE, CACHE_ENGINE, INSTANCE_TYPE_FAMILY, REGION, BILLING_ENTITY, RESERVATION_ID, SAVINGS_PLANS_TYPE, SAVINGS_PLAN_ARN, OPERATING_SYSTEM. Defaults to SERVICE if not provided.",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  },
-                                  {
-                                      "name": "metric",
-                                      "in": "query",
-                                      "description": "cost metric returned in the query. Valid values are AmortizedCost, BlendedCost, NetAmortizedCost, NetUnblendedCost, UnblendedCost. Defaults to UnblendedCost if not provided.",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  }
-                              ],
-                              "responses": {
-                                  "200": {
-                                      "description": "Returns AWS costs for the requested billing period",
-                                      "content": {
-                                          "application/json": {
-                                              "schema": {
-                                                  "type": "object",
-                                                  "properties": {
-                                                      "GroupedCosts": {
-                                                          "type": "object",
-                                                          "additionalProperties": {
-                                                              "type": "number",
-                                                              "description": "The cost incurred for the group on the respective date"
-                                                          }
-                                                      }
-                                                  }
-                                              }
-                                          }
-                                      }
-                                  }
-                              }
-                          }
-                      },
-                      "/get-dimension-values": {
-                          "get": {
-                              "summary": "Use this endpoint to retrieves all available and valid values for a specified filter (example, SERVICE, REGION) over a period of time.",
-                              "description": "This endpoint retrieves all available and valid values for a specified filter (example, SERVICE, REGION), that can be used to filter on other API calls.",
-                              "operationId": "getDimensionValues",
-                              "parameters": [
-                                  {
-                                      "name": "billing_period_start",
-                                      "in": "query",
-                                      "description": "The start date of the billing period in YYYY-MM-DD format.",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string",
-                                          "format": "date"
-                                      }
-                                  },
-                                  {
-                                      "name": "billing_period_end",
-                                      "in": "query",
-                                      "description": "The end date of the billing period in YYYY-MM-DD format.",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string",
-                                          "format": "date"
-                                      }
-                                  },
-                                  {
-                                      "name": "dimension_key",
-                                      "in": "query",
-                                      "description": "The name of the dimension to value for. Valid values are AZ, INSTANCE_TYPE, LINKED_ACCOUNT, OPERATION, PURCHASE_TYPE, SERVICE, USAGE_TYPE, PLATFORM, TENANCY, RECORD_TYPE, LEGAL_ENTITY_NAME, INVOICING_ENTITY, DEPLOYMENT_OPTION, DATABASE_ENGINE, CACHE_ENGINE, INSTANCE_TYPE_FAMILY, REGION, BILLING_ENTITY, RESERVATION_ID, SAVINGS_PLANS_TYPE, SAVINGS_PLAN_ARN, OPERATING_SYSTEM",
-                                      "required": true,
-                                      "schema": {
-                                          "type": "string"
-                                      }
-                                  }
-                              ],
-                              "responses": {
-                                  "200": {
-                                      "description": "Returns AWS Cost and Usage dimension values for the requested dimension in billing period",
-                                      "content": {
-                                          "application/json": {
-                                              "schema": {
-                                                  "type": "object",
-                                                  "properties": {
-                                                      "dimension": {
-                                                          "type": "object",
-                                                          "properties": {
-                                                              "name": {
-                                                                  "type": "string",
-                                                                  "description": "The name of the dimension for the requested billing period"
-                                                              },
-                                                              "values": {
-                                                                  "type": "array",
-                                                                  "description": "The list of values of the dimension for the requested billing period",
-                                                                  "items": {
-                                                                      "type": "string",
-                                                                      "description": "The value of the dimension for the requested billing period"
-                                                                  }
-                                                              }
-                                                          }
-                                                      }
-                                                  }
-                                              }
-                                          }
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  }
-              }
+                    "openapi": "3.0.0",
+                    "info": {
+                        "title": "AWS Cost And Usage API",
+                        "version": "1.0.0",
+                        "description": "The AWS Cost And Usage API provides a means to retrieve detailed cost and usage data for AWS services within a specified billing period."
+                    },
+                    "paths": {
+                        "/get-date": {
+                            "get": {
+                                "summary": "Retrieve Date",
+                                "description": "This endpoint retrieves current month date and today's date so agent know what month and day it's to compare the billing period requested by user is not in the future.",
+                                "operationId": "getDate",
+                                "responses": {
+                                    "200": {
+                                        "description": "Returns current date",
+                                        "content": {
+                                            "application/json": {
+                                                "schema": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "today_date": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "type": "string",
+                                                                "description": "Today's Date"
+                                                            }
+                                                        },
+                                                        "current_month": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "type": "string",
+                                                                "description": "Current Month"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "/get_cost_and_usage": {
+                            "get": {
+                                "summary": "Retrieve AWS Cost and Usage Data based on filter and grouping requested by user",
+                                "description": "This endpoint retrieve AWS cost and usage data for AWS services during a specified billing period, filter and grouping. It allows users to dynamically generate cost reports tailored to their needs, enabling detailed analysis of AWS spending. Users can specify parameters such as granularity, billing period start and end dates, and additional filters (e.g., service name, region, linked account) to customize the report according to their requirements.",
+                                "operationId": "GetCostAndUsage",
+                                "parameters": [
+                                    {
+                                        "name": "granularity",
+                                        "in": "query",
+                                        "description": "The granularity at which cost data is aggregated. If the the user doesn't provide a value, set it to MONTHLY",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "billing_period_start",
+                                        "in": "query",
+                                        "description": "The start date of the billing period in YYYY-MM-DD format. Defaults to last month, if not provided. You can get current date using getDate function",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string",
+                                            "format": "date"
+                                        }
+                                    },
+                                    {
+                                        "name": "billing_period_end",
+                                        "in": "query",
+                                        "description": "The end date of the billing period in YYYY-MM-DD format.",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string",
+                                            "format": "date"
+                                        }
+                                    },
+                                    {
+                                        "name": "service",
+                                        "in": "query",
+                                        "description": "The name of the AWS service to filter costs. If the the user request is for 'all services' or doesn't provide a value, set it to None. If the user provides a specific service name, use that value.",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "region",
+                                        "in": "query",
+                                        "description": "The AWS region to filter costs. Defaults to None if not provided.",
+                                        "required": false,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "linked_account",
+                                        "in": "query",
+                                        "description": "The linked account to filter costs. Defaults to None if not provided.",
+                                        "required": false,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "operation",
+                                        "in": "query",
+                                        "description": "Filter cost by the Operation or Action performed, Examples(RunInstance, CreateBucket). Defaults to None if not provided.",
+                                        "required": false,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "purchase_type",
+                                        "in": "query",
+                                        "description": "The purchase type (purchase option) to filter costs. Defaults to None if not provided.",
+                                        "required": false,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "record_type",
+                                        "in": "query",
+                                        "description": "The different types of charges such as Reserved Instance (RI) fees, usage costs, tax refunds, and credits. Defaults to None if not provided.",
+                                        "required": false,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "usage_type",
+                                        "in": "query",
+                                        "description": "The usage type to filter costs. Defaults to None if not provided.",
+                                        "required": false,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "group_by_dimension",
+                                        "in": "query",
+                                        "description": "The dimension key by which to group cost by. Valid values are AZ, INSTANCE_TYPE, LINKED_ACCOUNT, OPERATION, PURCHASE_TYPE, SERVICE, USAGE_TYPE, PLATFORM, TENANCY, RECORD_TYPE, LEGAL_ENTITY_NAME, INVOICING_ENTITY, DEPLOYMENT_OPTION, DATABASE_ENGINE, CACHE_ENGINE, INSTANCE_TYPE_FAMILY, REGION, BILLING_ENTITY, RESERVATION_ID, SAVINGS_PLANS_TYPE, SAVINGS_PLAN_ARN, OPERATING_SYSTEM. If the the user doesn't provide a value, set it to SERVICE .",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "name": "metric",
+                                        "in": "query",
+                                        "description": "cost metric returned in the query. Valid values are AmortizedCost, BlendedCost, NetAmortizedCost, NetUnblendedCost, UnblendedCost. If the the user doesn't provide a value, set it to UnblendedCost",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "200": {
+                                        "description": "Returns AWS costs for the requested billing period",
+                                        "content": {
+                                            "application/json": {
+                                                "schema": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "GroupedCosts": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "type": "number",
+                                                                "description": "The cost incurred for the group on the respective date"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "/get-dimension-values": {
+                            "get": {
+                                "summary": "Use this endpoint to retrieves all available and valid values for a specified filter (example, SERVICE, REGION) over a period of time.",
+                                "description": "This endpoint retrieves all available and valid values for a specified filter (example, SERVICE, REGION), that can be used to filter on other API calls.",
+                                "operationId": "getDimensionValues",
+                                "parameters": [
+                                    {
+                                        "name": "billing_period_start",
+                                        "in": "query",
+                                        "description": "The start date of the billing period in YYYY-MM-DD format.",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string",
+                                            "format": "date"
+                                        }
+                                    },
+                                    {
+                                        "name": "billing_period_end",
+                                        "in": "query",
+                                        "description": "The end date of the billing period in YYYY-MM-DD format.",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string",
+                                            "format": "date"
+                                        }
+                                    },
+                                    {
+                                        "name": "dimension_key",
+                                        "in": "query",
+                                        "description": "The name of the dimension to value for. Valid values are AZ, INSTANCE_TYPE, LINKED_ACCOUNT, OPERATION, PURCHASE_TYPE, SERVICE, USAGE_TYPE, PLATFORM, TENANCY, RECORD_TYPE, LEGAL_ENTITY_NAME, INVOICING_ENTITY, DEPLOYMENT_OPTION, DATABASE_ENGINE, CACHE_ENGINE, INSTANCE_TYPE_FAMILY, REGION, BILLING_ENTITY, RESERVATION_ID, SAVINGS_PLANS_TYPE, SAVINGS_PLAN_ARN, OPERATING_SYSTEM",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "200": {
+                                        "description": "Returns AWS Cost and Usage dimension values for the requested dimension in billing period",
+                                        "content": {
+                                            "application/json": {
+                                                "schema": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "dimension": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "name": {
+                                                                    "type": "string",
+                                                                    "description": "The name of the dimension for the requested billing period"
+                                                                },
+                                                                "values": {
+                                                                    "type": "array",
+                                                                    "description": "The list of values of the dimension for the requested billing period",
+                                                                    "items": {
+                                                                        "type": "string",
+                                                                        "description": "The value of the dimension for the requested billing period"
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
           Description: !Ref ActionGroupDescription
           SkipResourceInUseCheckOnDelete: True
 
