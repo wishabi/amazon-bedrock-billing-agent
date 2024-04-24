@@ -1,0 +1,602 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Provisions AWS Bedrock Agent"
+
+Parameters:
+  AgentName:
+    Type: String
+    Default: "aws-billing-agent"
+    Description: "Name of the Bedrock agent"
+
+  AgentAliasName:
+    Type: String
+    Default: "beta"
+    Description: "Alias name of the Bedrock agent"
+
+  AgentDescription:
+    Type: String
+    Description: "Description of the Bedrock agent"
+    Default: "AWS Billing Agent"
+
+  AgentFoundationalModel:
+    Type: String
+    Description: "Foundational model of the Bedrock agent"
+    Default: "anthropic.claude-3-sonnet-20240229-v1:0"
+    AllowedValues:
+      - "anthropic.claude-v2:1"
+      - "anthropic.claude-v2:0"
+      - "anthropic.claude-3-haiku-20240307-v1:0"
+      - "anthropic.claude-3-sonnet-20240229-v1:0"
+
+  AgentInstruction:
+    Type: String
+    Description: "Instruction for the Bedrock agent"
+    Default: |
+      You are expert in AWS, particularly in AWS services, billing, FinOps (Financial Operations), and analyzing cost and usage data. Your primary role is to assist users in understanding their AWS cost and usage trends, simplifying complex information into easily understandable summaries. Provide answer to any questions users have regarding their AWS service and AWS costs and usage. Additionally, you'll examine the gathered data on AWS costs and usage to provide recommendations, emphasizing strategies for cost efficiency and optimal resource utilization. Moreover, provide clear explanations and definitions for terms like in the AWS usage type, operation, and other aspects related to AWS cost and billing.
+  ActionGroupName:
+    Type: String
+    Default: "AWSBillingAgent"
+    Description: "Name of the Bedrock agent action group"
+  ActionGroupDescription:
+    Type: String
+    Default: "AWS Billing Agent Action Group"
+    Description: "Description of the Bedrock agent action group"
+Resources:
+  BillingAgentLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${AgentName}-lambda-role-${AWS::Region}-${AWS::AccountId}"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action: "sts:AssumeRole"
+            Principal:
+              Service: "lambda.amazonaws.com"
+      Policies:
+        - PolicyName: LambdaCostExplorerPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ce:*"
+                Resource: "*"
+
+  BillingAgentLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AgentName}-${AWS::Region}-${AWS::AccountId}"
+      Runtime: "python3.12"
+      Timeout: 300
+      MemorySize: 1024
+      Layers:
+        - !Sub "arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python312:6"
+      Role: !GetAtt BillingAgentLambdaRole.Arn
+      Handler: "index.lambda_handler"
+      Code:
+        ZipFile: |
+          import boto3
+          from datetime import datetime, timedelta
+          import json
+          from typing import Dict, Any
+          import pandas as pd
+
+          ce = boto3.client('ce')
+
+
+          def get_today_date() -> str:
+              """Gets date in YYYY-MM-DD format."""
+              return {'today_date': datetime.now().strftime('%Y-%m-%d'),
+                      'current_month': datetime.now().strftime('%Y-%m')}
+
+
+          def get_dimension_values(key: str, billing_period_start: str, billing_period_end: str) -> Dict[str, Any]:
+              """Get available values for a specific dimension."""
+              try:
+                  response = ce.get_dimension_values(
+                      TimePeriod={
+                          'Start': billing_period_start,
+                          'End': billing_period_end
+                      },
+                      Dimension=key.upper()
+                  )
+                  dimension_values = response['DimensionValues']
+                  values = [value['Value'] for value in dimension_values]
+                  return {'dimension': key.upper(), 'values': values}
+              except Exception as e:
+                  print(f"An error occurred: {e}")
+                  return {'error': str(e)}
+
+
+          def generate_cost_report(params: Dict[str, Any]) -> Dict[str, Any]:
+              """Generate a cost report based on the provided parameters."""
+
+              # Initialize default values
+              granularity = params.get('granularity', 'MONTHLY').upper()
+              billing_period_start = params.get('billing_period_start')
+              billing_period_end = params.get('billing_period_end')
+              billing_period_end = datetime.strptime(
+                  billing_period_end, '%Y-%m-%d') + timedelta(days=1)
+              billing_period_end = billing_period_end.strftime('%Y-%m-%d')
+              filter_dimensions = []
+              group_by_dimension = params.get('group_by_dimension', 'SERVICE')
+              metrics = params.get('metric', 'UnblendedCost')
+
+              # Construct filters based on provided parameters
+              for key, value in params.items():
+                  if key in ['granularity', 'billing_period_start', 'billing_period_end', 'group_by_dimension', 'dimension_key', 'metric']:
+                      continue
+                  if value.lower() not in ['all', 'none', '', 'all_services', 'allservices', 'all services']:
+                      dimension_values = get_dimension_values(
+                          key, billing_period_start, billing_period_end)
+                      if 'error' in dimension_values:
+                          return {'error': dimension_values['error']}
+                      # check if each filter value is in the list of dimension values
+                      valid_values = []
+                      for each_value in value.split(','):
+                          if each_value not in dimension_values['values']:
+                              return {'error': f'the filter value {each_value} is not in the list of valid dimension values for {key}. Please get the valid value using getDimensionValues function and try again'}
+                          valid_values.append(each_value)
+                      filter_dimensions.append({
+                          'Dimensions': {
+                              'Key': key.upper(),
+                              'Values': valid_values,
+                              'MatchOptions': ['EQUALS']
+                          }
+                      })
+
+              filter_criteria = None
+              if filter_dimensions:
+                  if len(filter_dimensions) > 1:
+                      filter_criteria = {'And': filter_dimensions}
+                  else:
+                      filter_criteria = filter_dimensions[0]
+              # Validate group_by_dimension
+              if group_by_dimension.lower() in ['','none']:
+                  group_by_dimension = 'SERVICE'
+              if group_by_dimension not in ['AZ', 'INSTANCE_TYPE', 'LINKED_ACCOUNT', 'OPERATION', 'PURCHASE_TYPE', 'SERVICE', 'USAGE_TYPE', 'PLATFORM', 'TENANCY', 'RECORD_TYPE', 'LEGAL_ENTITY_NAME', 'INVOICING_ENTITY', 'DEPLOYMENT_OPTION', 'DATABASE_ENGINE', 'CACHE_ENGINE', 'INSTANCE_TYPE_FAMILY', 'REGION', 'BILLING_ENTITY', 'RESERVATION_ID', 'SAVINGS_PLANS_TYPE', 'SAVINGS_PLAN_ARN', 'OPERATING_SYSTEM']:
+                  return {'error': 'Invalid group_by_dimension, check the group_by_dimension and try again. Valid values are AZ, INSTANCE_TYPE, LINKED_ACCOUNT, OPERATION, PURCHASE_TYPE, SERVICE, USAGE_TYPE, PLATFORM, TENANCY, RECORD_TYPE, LEGAL_ENTITY_NAME, INVOICING_ENTITY, DEPLOYMENT_OPTION, DATABASE_ENGINE, CACHE_ENGINE, INSTANCE_TYPE_FAMILY, REGION, BILLING_ENTITY, RESERVATION_ID, SAVINGS_PLANS_TYPE, SAVINGS_PLAN_ARN, OPERATING_SYSTEM'}
+
+              print(f'filter_criteria: {filter_criteria}')
+              print(f'group_by_dimension: {group_by_dimension}')
+              # Get costs for the specified billing period with filter
+
+              common_params = {
+                  'TimePeriod': {
+                      'Start': billing_period_start,
+                      'End': billing_period_end
+                  },
+                  'Granularity': granularity,
+                  'GroupBy': [
+                      {
+                          'Type': 'DIMENSION',
+                          'Key': group_by_dimension.upper()
+                      }
+                  ],
+                  'Metrics': [metrics]
+              }
+              grouped_costs = {}
+              next_token = None
+              while True:
+                  if next_token:
+                      common_params['NextPageToken'] = next_token
+                  try:
+                      if filter_criteria:
+                          common_params['Filter'] = filter_criteria
+                      response = ce.get_cost_and_usage(**common_params)
+                  except Exception as e:
+                      print(f"An error occurred: {e}")
+                      return {'error': str(e)}
+
+                  # Extract grouped costs for the billing period
+                  for result_by_time in response['ResultsByTime']:
+                      date = result_by_time['TimePeriod']['Start']
+                      for group in result_by_time['Groups']:
+                          group_key = group['Keys'][0]
+                          cost = float(group['Metrics'][metrics]['Amount'])
+                          grouped_costs.setdefault(date, {}).update({group_key: cost})
+                  next_token = response.get('NextPageToken')
+                  if not next_token:
+                      break
+              # change the response to Dataframe, add total to row and column by cost and sort desc by cost
+              df = pd.DataFrame.from_dict(grouped_costs)
+              df.fillna(0, inplace=True)
+              if df.empty:
+                  return {"GroupedCosts": "No cost data found for the specified parameters."}
+
+              df['Total'] = df.sum(axis=1)
+              df.loc['Total'] = df.sum()
+              df = df.sort_values(by='Total', ascending=False).drop('Total', axis=1)
+
+              return {'GroupedCosts': df.to_dict()}
+
+
+          def lambda_handler(event, context):
+              """Handle the Lambda function invocation."""
+
+              print(f'Event received from Bedrock Agent: {event}')
+              response_code = 200
+              action = event['actionGroup']
+              api_path = event['apiPath']
+
+              if api_path == '/get_cost_and_usage':
+                  try:
+                      parameters = {param['name']: param['value']
+                                    for param in event.get('parameters', [])}
+                      body = generate_cost_report(parameters)
+                  except Exception as e:
+                      body = {
+                          'error': str(e)
+                      }
+                      response_code = 500
+              elif api_path == '/get-dimension-values':
+                  try:
+                      parameters = {param['name']: param['value']
+                                    for param in event.get('parameters', [])}
+                      billing_period_start = parameters.get('billing_period_start')
+                      billing_period_end = parameters.get('billing_period_end')
+                      billing_period_end = datetime.strptime(
+                          billing_period_end, '%Y-%m-%d') + timedelta(days=1)
+                      billing_period_end = billing_period_end.strftime('%Y-%m-%d')
+                      key = parameters.get('dimension_key', 'SERVICE')
+                      body = get_dimension_values(
+                          key, billing_period_start, billing_period_end)
+                  except Exception as e:
+                      body = {
+                          'error': str(e)
+                      }
+                      response_code = 500
+              elif api_path == '/get-date':
+                  try:
+                      body = get_today_date()
+                  except Exception as e:
+                      body = {
+                          'error': str(e)
+                      }
+                      response_code = 500
+              else:
+                  body = {
+                      "error": f"{action}::{api_path} is not a valid API, try another one."
+                  }
+                  response_code = 400
+              # Check if the response body is greater than 25KB
+              if len(json.dumps(body)) > 25000:
+                  body = {
+                      "error": "The response size is larger than the agent can support. Please update the filter or billing period and try again."
+                  }
+                  response_code = 400
+                  print(f"The response is larger than the agent can support. Please update the filter or billing period and try again.")
+              response_body = {
+                  'application/json': {
+                      'body': json.dumps(body)
+                  }
+              }
+
+              print(f'Response sent to Bedrock Agent: {response_body}')
+              action_response = {
+                  "messageVersion": "1.0",
+                  "response": {
+                      "actionGroup": action,
+                      "apiPath": api_path,
+                      "httpMethod": event['httpMethod'],
+                      "httpStatusCode": response_code,
+                      "responseBody": response_body
+                  }
+              }
+
+              return action_response
+
+  BillingAgentBedrockAgentRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "AmazonBedrockExecutionRoleForAgents_${AgentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Condition:
+              StringEquals:
+                aws:SourceAccount: !Sub "${AWS::AccountId}"
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*"
+            Action: "sts:AssumeRole"
+            Effect: "Allow"
+            Principal:
+              Service: "bedrock.amazonaws.com"
+            Sid: "AmazonBedrockAgentBedrockFoundationModelPolicyProd"
+      Policies:
+        - PolicyName: BedrockAccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "bedrock:InvokeModel"
+                Resource: !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/${AgentFoundationalModel}"
+                Sid: "AmazonBedrockAgentBedrockFoundationModelPolicyProd"
+
+  BillingAgent:
+    Type: "AWS::Bedrock::Agent"
+    Properties:
+      AgentName: !Ref AgentName
+      AgentResourceRoleArn: !GetAtt BillingAgentBedrockAgentRole.Arn
+      Instruction: !Ref AgentInstruction
+      Description: !Ref AgentDescription
+      FoundationModel: !Ref AgentFoundationalModel
+      IdleSessionTTLInSeconds: 1800
+      SkipResourceInUseCheckOnDelete: True
+      AutoPrepare: True
+      ActionGroups:
+        - ParentActionGroupSignature: AMAZON.UserInput
+          ActionGroupName: UserInputAction
+        - ActionGroupExecutor:
+            Lambda: !GetAtt BillingAgentLambdaFunction.Arn
+          ActionGroupName: !Ref ActionGroupName
+          ActionGroupState: ENABLED
+          ApiSchema:
+            Payload: |
+              {
+                  "openapi": "3.0.0",
+                  "info": {
+                      "title": "AWS Cost And Usage API",
+                      "version": "1.0.0",
+                      "description": "The AWS Cost And Usage API provides a means to retrieve detailed cost and usage data for AWS services within a specified billing period."
+                  },
+                  "paths": {
+                      "/get-date": {
+                          "get": {
+                              "summary": "Retrieve Date",
+                              "description": "This endpoint retrieves current month date and today's date so agent know what month and day it's to compare the billing period requested by user is not in the future.",
+                              "operationId": "getDate",
+                              "responses": {
+                                  "200": {
+                                      "description": "Returns current date",
+                                      "content": {
+                                          "application/json": {
+                                              "schema": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                      "today_date": {
+                                                          "type": "object",
+                                                          "additionalProperties": {
+                                                              "type": "string",
+                                                              "description": "Today's Date"
+                                                          }
+                                                      },
+                                                      "current_month": {
+                                                          "type": "object",
+                                                          "additionalProperties": {
+                                                              "type": "string",
+                                                              "description": "Current Month"
+                                                          }
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      },
+                      "/get_cost_and_usage": {
+                          "get": {
+                              "summary": "Retrieve AWS Cost and Usage Data based on filter and grouping requested by user",
+                              "description": "This endpoint retrieve AWS cost and usage data for AWS services during a specified billing period, filter and grouping. It allows users to dynamically generate cost reports tailored to their needs, enabling detailed analysis of AWS spending. Users can specify parameters such as granularity, billing period start and end dates, and additional filters (e.g., service name, region, linked account) to customize the report according to their requirements.",
+                              "operationId": "GetCostAndUsage",
+                              "parameters": [
+                                  {
+                                      "name": "granularity",
+                                      "in": "query",
+                                      "description": "The granularity at which cost data is aggregated. Defaults MONTHLY, if not provided.",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "billing_period_start",
+                                      "in": "query",
+                                      "description": "The start date of the billing period in YYYY-MM-DD format. Defaults to last month, if not provided. You can get current date using getDate function",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string",
+                                          "format": "date"
+                                      }
+                                  },
+                                  {
+                                      "name": "billing_period_end",
+                                      "in": "query",
+                                      "description": "The end date of the billing period in YYYY-MM-DD format.",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string",
+                                          "format": "date"
+                                      }
+                                  },
+                                  {
+                                      "name": "service",
+                                      "in": "query",
+                                      "description": "The name of the AWS service to filter costs. If the the user request is for 'all services' or doesn't provide a value, set it to None. If the user provides a specific service name, use that value.",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "region",
+                                      "in": "query",
+                                      "description": "The AWS region to filter costs. Defaults to None if not provided.",
+                                      "required": false,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "linked_account",
+                                      "in": "query",
+                                      "description": "The linked account to filter costs. Defaults to None if not provided.",
+                                      "required": false,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "operation",
+                                      "in": "query",
+                                      "description": "Filter cost by the Operation or Action performed, Examples(RunInstance, CreateBucket). Defaults to None if not provided.",
+                                      "required": false,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "purchase_type",
+                                      "in": "query",
+                                      "description": "The purchase type (purchase option) to filter costs. Defaults to None if not provided.",
+                                      "required": false,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "record_type",
+                                      "in": "query",
+                                      "description": "The different types of charges such as Reserved Instance (RI) fees, usage costs, tax refunds, and credits. Defaults to None if not provided.",
+                                      "required": false,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "usage_type",
+                                      "in": "query",
+                                      "description": "The usage type to filter costs. Defaults to None if not provided.",
+                                      "required": false,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "group_by_dimension",
+                                      "in": "query",
+                                      "description": "The dimension key by which to group cost by. Valid values are AZ, INSTANCE_TYPE, LINKED_ACCOUNT, OPERATION, PURCHASE_TYPE, SERVICE, USAGE_TYPE, PLATFORM, TENANCY, RECORD_TYPE, LEGAL_ENTITY_NAME, INVOICING_ENTITY, DEPLOYMENT_OPTION, DATABASE_ENGINE, CACHE_ENGINE, INSTANCE_TYPE_FAMILY, REGION, BILLING_ENTITY, RESERVATION_ID, SAVINGS_PLANS_TYPE, SAVINGS_PLAN_ARN, OPERATING_SYSTEM. Defaults to SERVICE if not provided.",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  },
+                                  {
+                                      "name": "metric",
+                                      "in": "query",
+                                      "description": "cost metric returned in the query. Valid values are AmortizedCost, BlendedCost, NetAmortizedCost, NetUnblendedCost, UnblendedCost. Defaults to UnblendedCost if not provided.",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  }
+                              ],
+                              "responses": {
+                                  "200": {
+                                      "description": "Returns AWS costs for the requested billing period",
+                                      "content": {
+                                          "application/json": {
+                                              "schema": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                      "GroupedCosts": {
+                                                          "type": "object",
+                                                          "additionalProperties": {
+                                                              "type": "number",
+                                                              "description": "The cost incurred for the group on the respective date"
+                                                          }
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      },
+                      "/get-dimension-values": {
+                          "get": {
+                              "summary": "Use this endpoint to retrieves all available and valid values for a specified filter (example, SERVICE, REGION) over a period of time.",
+                              "description": "This endpoint retrieves all available and valid values for a specified filter (example, SERVICE, REGION), that can be used to filter on other API calls.",
+                              "operationId": "getDimensionValues",
+                              "parameters": [
+                                  {
+                                      "name": "billing_period_start",
+                                      "in": "query",
+                                      "description": "The start date of the billing period in YYYY-MM-DD format.",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string",
+                                          "format": "date"
+                                      }
+                                  },
+                                  {
+                                      "name": "billing_period_end",
+                                      "in": "query",
+                                      "description": "The end date of the billing period in YYYY-MM-DD format.",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string",
+                                          "format": "date"
+                                      }
+                                  },
+                                  {
+                                      "name": "dimension_key",
+                                      "in": "query",
+                                      "description": "The name of the dimension to value for. Valid values are AZ, INSTANCE_TYPE, LINKED_ACCOUNT, OPERATION, PURCHASE_TYPE, SERVICE, USAGE_TYPE, PLATFORM, TENANCY, RECORD_TYPE, LEGAL_ENTITY_NAME, INVOICING_ENTITY, DEPLOYMENT_OPTION, DATABASE_ENGINE, CACHE_ENGINE, INSTANCE_TYPE_FAMILY, REGION, BILLING_ENTITY, RESERVATION_ID, SAVINGS_PLANS_TYPE, SAVINGS_PLAN_ARN, OPERATING_SYSTEM",
+                                      "required": true,
+                                      "schema": {
+                                          "type": "string"
+                                      }
+                                  }
+                              ],
+                              "responses": {
+                                  "200": {
+                                      "description": "Returns AWS Cost and Usage dimension values for the requested dimension in billing period",
+                                      "content": {
+                                          "application/json": {
+                                              "schema": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                      "dimension": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                              "name": {
+                                                                  "type": "string",
+                                                                  "description": "The name of the dimension for the requested billing period"
+                                                              },
+                                                              "values": {
+                                                                  "type": "array",
+                                                                  "description": "The list of values of the dimension for the requested billing period",
+                                                                  "items": {
+                                                                      "type": "string",
+                                                                      "description": "The value of the dimension for the requested billing period"
+                                                                  }
+                                                              }
+                                                          }
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          Description: !Ref ActionGroupDescription
+          SkipResourceInUseCheckOnDelete: True
+
+  AgentLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Sub "${AgentName}-${AWS::Region}-${AWS::AccountId}"
+      Action: "lambda:InvokeFunction"
+      Principal: "bedrock.amazonaws.com"
+      SourceArn: !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/${BillingAgent.AgentId}"
