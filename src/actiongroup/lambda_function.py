@@ -127,11 +127,18 @@ def generate_cost_report(params: Dict[str, Any]) -> Dict[str, Any]:
     if df.empty:
         return {"GroupedCosts": "No cost data found for the specified parameters."}
 
-    df['Total'] = df.sum(axis=1)
-    df.loc['Total'] = df.sum()
-    df = df.sort_values(by='Total', ascending=False).drop('Total', axis=1)
-
-    return {'GroupedCosts': df.to_dict()}
+    df[f'Service total'] = df.sum(axis=1)
+    df.loc[f'Total Costs'] = df.sum()
+    df = df.sort_values(by='Service total', ascending=False)
+    result = {'GroupedCosts': df.to_dict()}
+    if len(json.dumps(result)) > 25000:
+        # dataframe to only include Service total and add a new row for warning message
+        df = df[['Service total']]
+        billing_period_end = datetime.strptime(billing_period_end, '%Y-%m-%d') + timedelta(days=-1)
+        result = {'warning': f'Due to the size of the response body exceeding 25KB, only the aggregated service total costs for the specified billing period ({billing_period_start} through {billing_period_end}) are provided. If you require detailed spending information, please adjust the filter or billing period and retry your request.',
+                  'GroupedCosts': df.to_dict()}
+        return result
+    return result
 
 
 def lambda_handler(event, context):

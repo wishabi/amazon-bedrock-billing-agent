@@ -50,7 +50,7 @@
                     {
                         "name": "granularity",
                         "in": "query",
-                        "description": "The granularity at which cost data is aggregated. If the the user doesn't provide a value, set it to MONTHLY",
+                        "description": "The granularity at which cost data is aggregated. Valid values are DAILY, MONTHLY and HOURLY. If the the user doesn't provide a value, set it to MONTHLY",
                         "required": true,
                         "schema": {
                             "type": "string"

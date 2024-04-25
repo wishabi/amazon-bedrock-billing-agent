@@ -22,8 +22,6 @@ Parameters:
     Description: "Foundational model of the Bedrock agent"
     Default: "anthropic.claude-3-sonnet-20240229-v1:0"
     AllowedValues:
-      - "anthropic.claude-v2:1"
-      - "anthropic.claude-v2:0"
       - "anthropic.claude-3-haiku-20240307-v1:0"
       - "anthropic.claude-3-sonnet-20240229-v1:0"
 
@@ -207,11 +205,18 @@ Resources:
               if df.empty:
                   return {"GroupedCosts": "No cost data found for the specified parameters."}
 
-              df['Total'] = df.sum(axis=1)
-              df.loc['Total'] = df.sum()
-              df = df.sort_values(by='Total', ascending=False).drop('Total', axis=1)
-
-              return {'GroupedCosts': df.to_dict()}
+              df[f'Service total'] = df.sum(axis=1)
+              df.loc[f'Total Costs'] = df.sum()
+              df = df.sort_values(by='Service total', ascending=False)
+              result = {'GroupedCosts': df.to_dict()}
+              if len(json.dumps(result)) > 25000:
+                  # dataframe to only include Service total and add a new row for warning message
+                  df = df[['Service total']]
+                  billing_period_end = datetime.strptime(billing_period_end, '%Y-%m-%d') + timedelta(days=-1)
+                  result = {'warning': f'Due to the size of the response body exceeding 25KB, only the aggregated service total costs for the specified billing period ({billing_period_start} through {billing_period_end}) are provided. If you require detailed spending information, please adjust the filter or billing period and retry your request.',
+                          'GroupedCosts': df.to_dict()}
+                  return result
+              return result
 
 
           def lambda_handler(event, context):
@@ -225,7 +230,7 @@ Resources:
               if api_path == '/get_cost_and_usage':
                   try:
                       parameters = {param['name']: param['value']
-                                    for param in event.get('parameters', [])}
+                                  for param in event.get('parameters', [])}
                       body = generate_cost_report(parameters)
                   except Exception as e:
                       body = {
@@ -235,7 +240,7 @@ Resources:
               elif api_path == '/get-dimension-values':
                   try:
                       parameters = {param['name']: param['value']
-                                    for param in event.get('parameters', [])}
+                                  for param in event.get('parameters', [])}
                       billing_period_start = parameters.get('billing_period_start')
                       billing_period_end = parameters.get('billing_period_end')
                       billing_period_end = datetime.strptime(
@@ -389,7 +394,7 @@ Resources:
                                     {
                                         "name": "granularity",
                                         "in": "query",
-                                        "description": "The granularity at which cost data is aggregated. If the the user doesn't provide a value, set it to MONTHLY",
+                                        "description": "The granularity at which cost data is aggregated. Valid values are DAILY, MONTHLY and HOURLY. If the the user doesn't provide a value, set it to MONTHLY",
                                         "required": true,
                                         "schema": {
                                             "type": "string"
