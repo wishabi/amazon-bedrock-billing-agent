@@ -1,0 +1,6 @@
+template-file-path: agent_template.yaml
+parameters: {}
+tags:
+  system: infra-bedrock-billing-agent
+  environment: production
+  vertical: Capabilities
